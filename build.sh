@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Mecho Basic.app'i derler. `./build.sh install` ile ~/Applications'a kurup başlatır.
+# Builds Mecho Basic.app. `./build.sh install` also installs it to ~/Applications and launches it.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -9,7 +9,7 @@ mkdir -p "$APP/Contents/MacOS"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 swiftc -O -swift-version 5 -target arm64-apple-macos13.0 Sources/main.swift -o "$APP/Contents/MacOS/MechoBasic"
 codesign --force --sign - "$APP"
-echo "Derlendi: $APP"
+echo "Built: $APP"
 
 if [[ "${1:-}" == "install" ]]; then
   DEST="$HOME/Applications/Mecho Basic.app"
@@ -18,5 +18,5 @@ if [[ "${1:-}" == "install" ]]; then
   rm -rf "$DEST"
   cp -R "$APP" "$DEST"
   open "$DEST"
-  echo "Kuruldu ve başlatıldı: $DEST"
+  echo "Installed and launched: $DEST"
 fi

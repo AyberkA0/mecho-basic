@@ -3,7 +3,22 @@ import ApplicationServices
 import Cocoa
 import ServiceManagement
 
-// MARK: - Ses: kaydet + yankılı çal
+private let logURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/Logs/MechoBasic.log")
+
+func log(_ message: String) {
+    NSLog("MechoBasic: \(message)")
+    let line = "\(Date()) \(message)\n"
+    if let handle = try? FileHandle(forWritingTo: logURL) {
+        handle.seekToEndOfFile()
+        handle.write(Data(line.utf8))
+        try? handle.close()
+    } else {
+        try? line.write(to: logURL, atomically: true, encoding: .utf8)
+    }
+}
+
+// MARK: - Audio: record + play back with echo
 
 final class EchoEngine {
     enum State { case idle, recording, playing }
@@ -28,7 +43,7 @@ final class EchoEngine {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
-            NSLog("MechoBasic: mikrofon girişi bulunamadı")
+            log("no microphone input found")
             return
         }
         sampleRate = format.sampleRate
@@ -42,7 +57,7 @@ final class EchoEngine {
             recorder = engine
             state = .recording
         } catch {
-            NSLog("MechoBasic: kayıt başlatılamadı: \(error)")
+            log("could not start recording: \(error)")
             input.removeTap(onBus: 0)
         }
     }
@@ -61,7 +76,7 @@ final class EchoEngine {
         play(recorded)
     }
 
-    // Çok kanallı girişleri mono'ya indir.
+    // Downmix multichannel input to mono.
     private func append(_ buffer: AVAudioPCMBuffer) {
         guard let data = buffer.floatChannelData else { return }
         let frames = Int(buffer.frameLength)
@@ -110,7 +125,7 @@ final class EchoEngine {
         do {
             try engine.start()
         } catch {
-            NSLog("MechoBasic: çalma başlatılamadı: \(error)")
+            log("could not start playback: \(error)")
             state = .idle
             return
         }
@@ -120,7 +135,7 @@ final class EchoEngine {
         state = .playing
 
         node.scheduleBuffer(buffer, at: nil, options: [], completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            // Yankı kuyruğunun sönmesi için biraz bekle.
+            // Wait a bit so the echo tail can fade out.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                 guard let self, self.playbackID == id else { return }
                 self.stopPlayback()
@@ -137,10 +152,11 @@ final class EchoEngine {
     }
 }
 
-// MARK: - F6 dinleyici
+// MARK: - F6 listener
 
 final class F6Listener {
-    private static let f6KeyCode: Int64 = 97
+    // 97: standard F6. 178: the "Do Not Disturb" (moon) key on F6 of Apple keyboards.
+    private static let keyCodes: Set<Int64> = [97, 178]
 
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
@@ -178,7 +194,8 @@ final class F6Listener {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
-        guard event.getIntegerValueField(.keyboardEventKeycode) == Self.f6KeyCode else {
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard Self.keyCodes.contains(keyCode) else {
             return Unmanaged.passUnretained(event)
         }
         if type == .keyDown, !isDown {
@@ -188,19 +205,19 @@ final class F6Listener {
             isDown = false
             onRelease?()
         }
-        return nil // F6'yı sistemden yut
+        return nil // swallow F6 so the system never sees it
     }
 }
 
-// MARK: - Menü çubuğu uygulaması
+// MARK: - Menu bar app
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let echo = EchoEngine()
     private let listener = F6Listener()
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let permissionItem = NSMenuItem(title: "Erişilebilirlik iznini ver…", action: #selector(openAccessibility), keyEquivalent: "")
-    private let loginItem = NSMenuItem(title: "Girişte başlat", action: #selector(toggleLogin), keyEquivalent: "")
+    private let permissionItem = NSMenuItem(title: "Grant Accessibility Permission…", action: #selector(openAccessibility), keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLogin), keyEquivalent: "")
     private var retryTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -212,7 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         listener.onRelease = { [weak self] in self?.echo.stopRecordingAndPlay() }
 
         AVCaptureDevice.requestAccess(for: .audio) { granted in
-            if !granted { NSLog("MechoBasic: mikrofon izni verilmedi") }
+            if !granted { log("microphone permission denied") }
         }
 
         registerLoginItemOnFirstLaunch()
@@ -227,14 +244,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(loginItem)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Çıkış", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         [permissionItem, loginItem].forEach { $0.target = self }
         statusItem.menu = menu
         refreshMenu()
     }
 
     private func refreshMenu() {
-        statusLine.title = listener.isActive ? "F6'ya basılı tut ve konuş" : "Erişilebilirlik izni bekleniyor"
+        statusLine.title = listener.isActive ? "Hold F6 and speak" : "Waiting for Accessibility permission"
         permissionItem.isHidden = listener.isActive
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
@@ -254,13 +271,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startListening() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        AXIsProcessTrustedWithOptions(options)
-        if listener.start() { refreshMenu(); return }
+        log("accessibility permission: \(AXIsProcessTrustedWithOptions(options))")
+        if listener.start() { log("F6 listener active"); refreshMenu(); return }
+        log("could not start F6 listener, waiting for permission")
         refreshMenu()
-        // İzin verilene kadar tekrar dene.
+        // Keep retrying until permission is granted.
         retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
             guard let self, self.listener.start() else { return }
             timer.invalidate()
+            log("F6 listener active")
             self.refreshMenu()
         }
     }
@@ -284,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try SMAppService.mainApp.register()
             }
         } catch {
-            NSLog("MechoBasic: giriş öğesi değiştirilemedi: \(error)")
+            log("could not change login item: \(error)")
         }
         refreshMenu()
     }

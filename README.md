@@ -1,17 +1,19 @@
 # Mecho Basic
 
-Menü çubuğunda yaşayan küçük bir macOS uygulaması. **F6**'ya basılı tutup konuş, bırakınca söylediklerin yankılı şekilde geri çalınır.
+A tiny macOS menu bar app. Hold **F6** and speak; when you let go, it plays back what you said with an echo.
 
-## Kurulum
+## Install
 
 ```bash
 ./build.sh install
 ```
 
-Uygulama `~/Applications/Mecho Basic.app` olarak kurulur, başlatılır ve giriş öğesi olarak kaydedilir (menüden kapatılabilir).
+The app is installed to `~/Applications/Mecho Basic.app`, launched, and registered as a login item (you can turn that off from the menu).
 
-İlk açılışta iki izin gerekir:
-- **Mikrofon** — kayıt için.
-- **Erişilebilirlik** — F6'yı yakalayıp sistemden gizlemek için (Sistem Ayarları → Gizlilik ve Güvenlik → Erişilebilirlik).
+On first launch it needs two permissions:
+- **Microphone** — to record.
+- **Accessibility** — to capture F6 and hide it from the system (System Settings → Privacy & Security → Accessibility).
 
-> Mac klavyesinde üst sıra medya tuşu olarak çalışıyorsa F6 için `fn+F6` kullan ya da Sistem Ayarları → Klavye'den "F1, F2 vb. tuşları standart işlev tuşları olarak kullan"ı aç.
+F6 works both as a standard function key and as the Do Not Disturb (moon) key on Apple keyboards; either way the system action is suppressed.
+
+> The app is ad-hoc signed, so after each rebuild macOS may revoke the Accessibility permission. Remove the app from the Accessibility list and add it again.

@@ -21,6 +21,6 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>F6'ya basılı tutarken söylediklerini kaydedip yankılı olarak tekrar çalmak için.</string>
+	<string>Records what you say while holding F6 and plays it back with an echo.</string>
 </dict>
 </plist>
