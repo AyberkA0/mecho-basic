@@ -28,6 +28,9 @@ final class EchoEngine {
         didSet { DispatchQueue.main.async { self.onStateChange?(self.state) } }
     }
 
+    // Playback volume multiplier (5x ≈ +14 dB).
+    private static let gain: Float = 5
+
     private var recorder: AVAudioEngine?
     private var player: AVAudioEngine?
     private var samples: [Float] = []
@@ -99,9 +102,8 @@ final class EchoEngine {
               let buffer = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: AVAudioFrameCount(recorded.count))
         else { state = .idle; return }
         buffer.frameLength = AVAudioFrameCount(recorded.count)
-        recorded.withUnsafeBufferPointer { src in
-            buffer.floatChannelData![0].update(from: src.baseAddress!, count: recorded.count)
-        }
+        let dst = buffer.floatChannelData![0]
+        for i in 0..<recorded.count { dst[i] = recorded[i] * Self.gain }
 
         let engine = AVAudioEngine()
         let node = AVAudioPlayerNode()
@@ -116,11 +118,19 @@ final class EchoEngine {
         reverb.loadFactoryPreset(.largeHall)
         reverb.wetDryMix = 30
 
-        [node, upmix, delay, reverb].forEach { engine.attach($0) }
+        // Keeps the boosted signal plus echo build-up from clipping.
+        let limiter = AVAudioUnitEffect(audioComponentDescription: AudioComponentDescription(
+            componentType: kAudioUnitType_Effect,
+            componentSubType: kAudioUnitSubType_PeakLimiter,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0, componentFlagsMask: 0))
+
+        [node, upmix, delay, reverb, limiter].forEach { engine.attach($0) }
         engine.connect(node, to: upmix, format: monoFormat)
         engine.connect(upmix, to: delay, format: stereoFormat)
         engine.connect(delay, to: reverb, format: stereoFormat)
-        engine.connect(reverb, to: engine.mainMixerNode, format: stereoFormat)
+        engine.connect(reverb, to: limiter, format: stereoFormat)
+        engine.connect(limiter, to: engine.mainMixerNode, format: stereoFormat)
 
         do {
             try engine.start()
