@@ -8,7 +8,10 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 swiftc -O -swift-version 5 -target arm64-apple-macos13.0 Sources/main.swift -o "$APP/Contents/MacOS/MechoBasic"
-codesign --force --sign - "$APP"
+# Use the stable identity from ./make-cert.sh when present, otherwise ad-hoc sign.
+IDENTITY="Mecho Basic Dev"
+security find-certificate -c "$IDENTITY" >/dev/null 2>&1 || IDENTITY="-"
+codesign --force --sign "$IDENTITY" "$APP"
 echo "Built: $APP"
 
 if [[ "${1:-}" == "install" ]]; then
